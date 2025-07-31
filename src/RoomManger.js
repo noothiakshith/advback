@@ -200,4 +200,77 @@ export class RoomManager {
             type:"new-vote"
         })
     }
+
+    async adminremovesong(spaceid,userid,streamid){
+        const spaceid = this.spaces.get(spaceid);
+        const user = this.users.get(userid);
+        const creatorid = space?.creatorid;
+        const iscreator = user === creatorid;
+        if(iscreator===creatorid){
+            const removesong = await this.prisma.currentStream.delete({
+                where:{
+                    spaceId:spaceid,
+                    userId:userid,
+                    streamId:streamid
+                }
+            })
+            console.log(removesong)
+        }
+        //publish the publisher
+        //if they are not send the ws that u cannot send
+    }
+    async adminplaynext(spaceid,userid){
+        const space = this.spaces.get(spaceid);
+        const user = this.users.get(userid);
+        const creatorid = space?.creatorid;
+        if(user!==creatorid){
+            await user?.ws.forEach((ws)=>{
+                ws.send(JSON.stringify({type:"error",message:"You are not the creator"}))
+            })
+        }
+        else{
+            const nextsong = await this.prisma.stream.findFirst({
+                where:{
+                    played:false,
+                    spaceId:spaceid
+                },
+                orderBy:{
+                    upvotes:{
+                        _count:"desc"
+                    }
+                }
+            })
+
+            await Promise.all([
+                this.prisma.currentStream.upsert({
+                    where:{
+                        spaceId:spaceid
+                    },
+                    update:{
+                        spaceId:spaceId,
+                        userId:userid,
+                        streamId:nextsong.id
+                    },
+                    create:{
+                        spaceId:spaceId,
+                        userId:userid,
+                        streamId:nextsong.id
+                    }
+                }),
+                this.prisma.stream.update({
+                    where:{
+                        id:nextsong.id,
+                    },
+                    data:{
+                        played:true,
+                        playedTs:new Date()
+                    }
+                })
+            ])
+            await this.publisher.publish(spaceid,{
+                type:"play-next"
+            })
+        }
+    }
+
 }
